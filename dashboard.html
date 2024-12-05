@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cycling Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        #metrics {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 30px;
+            justify-content: center;
+        }
+        #metrics div {
+            font-size: 36px; /* Bigger text */
+            font-weight: bold;
+            background: #f0f0f0;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        button {
+            font-size: 20px;
+            padding: 10px 20px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cycling Dashboard</h1>
+    <div id="metrics">
+        <div id="cadence">Cadence: -- RPM</div>
+        <div id="resistance">Resistance: --%</div>
+        <div id="output">Output: -- W</div>
+        <div id="total-output">Total Output: -- kJ</div>
+    </div>
+    <button id="connect">Connect to DFC</button>
+    <script>
+        document.getElementById('connect').addEventListener('click', async () => {
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['cycling_power', 'cycling_speed_cadence']
+                });
+                const server = await device.gatt.connect();
+                const powerService = await server.getPrimaryService('cycling_power');
+                const cadenceService = await server.getPrimaryService('cycling_speed_cadence');
+
+                // Cadence Characteristic
+                const cadenceChar = await cadenceService.getCharacteristic('cycling_speed_cadence_measurement');
+                cadenceChar.addEventListener('characteristicvaluechanged', event => {
+                    const cadence = event.target.value.getUint16(2, true);
+                    document.getElementById('cadence').innerText = `Cadence: ${cadence} RPM`;
+                });
+                await cadenceChar.startNotifications();
+
+                // Resistance, Output, and Total Output (simulated as example)
+                setInterval(() => {
+                    const resistance = Math.floor(Math.random() * 100); // Simulate resistance
+                    const output = Math.floor(Math.random() * 300); // Simulate power output
+                    const totalOutput = Math.floor(output / 10) * 5; // Simulate total output
+                    document.getElementById('resistance').innerText = `Resistance: ${resistance}%`;
+                    document.getElementById('output').innerText = `Output: ${output} W`;
+                    document.getElementById('total-output').innerText = `Total Output: ${totalOutput} kJ`;
+                }, 1000);
+
+            } catch (error) {
+                console.error(error);
+                alert('Failed to connect: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>
