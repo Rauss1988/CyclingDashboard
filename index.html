@@ -15,7 +15,7 @@
             justify-content: center;
         }
         #metrics div {
-            font-size: 36px; /* Bigger text */
+            font-size: 36px;
             font-weight: bold;
             background: #f0f0f0;
             border-radius: 10px;
@@ -28,6 +28,14 @@
             margin-top: 20px;
             cursor: pointer;
         }
+        #timer-controls {
+            margin-top: 20px;
+        }
+        #timer {
+            font-size: 40px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -39,40 +47,88 @@
         <div id="total-output">Total Output: -- kJ</div>
     </div>
     <button id="connect">Connect to DFC</button>
+
+    <!-- Timer Section -->
+    <div id="timer-controls">
+        <button id="start-timer">Start Timer</button>
+        <button id="stop-timer">Stop Timer</button>
+        <button id="reset-timer">Reset Timer</button>
+        <div id="timer">00:00:00</div>
+    </div>
+
     <script>
+        // Timer Logic
+        let timerInterval;
+        let elapsedSeconds = 0;
+
+        function formatTime(seconds) {
+            const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+            const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+            const secs = String(seconds % 60).padStart(2, '0');
+            return `${hours}:${minutes}:${secs}`;
+        }
+
+        document.getElementById('start-timer').addEventListener('click', () => {
+            if (!timerInterval) {
+                timerInterval = setInterval(() => {
+                    elapsedSeconds++;
+                    document.getElementById('timer').innerText = formatTime(elapsedSeconds);
+                }, 1000);
+            }
+        });
+
+        document.getElementById('stop-timer').addEventListener('click', () => {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        });
+
+        document.getElementById('reset-timer').addEventListener('click', () => {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            elapsedSeconds = 0;
+            document.getElementById('timer').innerText = formatTime(elapsedSeconds);
+        });
+
+        // DFC Connection Logic
         document.getElementById('connect').addEventListener('click', async () => {
             try {
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: ['cycling_power', 'cycling_speed_cadence']
+                    optionalServices: [
+                        '00001818-0000-1000-8000-00805f9b34fb', // Cycling Power
+                        '00001816-0000-1000-8000-00805f9b34fb'  // Cycling Speed & Cadence
+                    ]
                 });
-                const server = await device.gatt.connect();
-                const powerService = await server.getPrimaryService('cycling_power');
-                const cadenceService = await server.getPrimaryService('cycling_speed_cadence');
 
-                // Cadence Characteristic
-                const cadenceChar = await cadenceService.getCharacteristic('cycling_speed_cadence_measurement');
-                cadenceChar.addEventListener('characteristicvaluechanged', event => {
+                const server = await device.gatt.connect();
+
+                // Get Cycling Power Service
+                const powerService = await server.getPrimaryService('00001818-0000-1000-8000-00805f9b34fb');
+                const powerChar = await powerService.getCharacteristic('cycling_power_measurement');
+                powerChar.addEventListener('characteristicvaluechanged', event => {
+                    const power = event.target.value.getUint16(0, true);
+                    document.getElementById('output').innerText = `Output: ${power} W`;
+                });
+                await powerChar.startNotifications();
+
+                // Get Cycling Speed and Cadence Service
+                const speedService = await server.getPrimaryService('00001816-0000-1000-8000-00805f9b34fb');
+                const speedChar = await speedService.getCharacteristic('cycling_speed_cadence_measurement');
+                speedChar.addEventListener('characteristicvaluechanged', event => {
                     const cadence = event.target.value.getUint16(2, true);
                     document.getElementById('cadence').innerText = `Cadence: ${cadence} RPM`;
                 });
-                await cadenceChar.startNotifications();
-
-                // Resistance, Output, and Total Output (simulated as example)
-                setInterval(() => {
-                    const resistance = Math.floor(Math.random() * 100); // Simulate resistance
-                    const output = Math.floor(Math.random() * 300); // Simulate power output
-                    const totalOutput = Math.floor(output / 10) * 5; // Simulate total output
-                    document.getElementById('resistance').innerText = `Resistance: ${resistance}%`;
-                    document.getElementById('output').innerText = `Output: ${output} W`;
-                    document.getElementById('total-output').innerText = `Total Output: ${totalOutput} kJ`;
-                }, 1000);
+                await speedChar.startNotifications();
 
             } catch (error) {
                 console.error(error);
                 alert('Failed to connect: ' + error.message);
             }
         });
+
+        // Remove Placeholder Simulated Values
+        document.getElementById('resistance').innerText = `Resistance: --%`;
+        document.getElementById('total-output').innerText = `Total Output: -- kJ`;
     </script>
 </body>
 </html>
