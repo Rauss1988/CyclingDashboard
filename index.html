@@ -52,7 +52,7 @@
 
     <script>
         // UUIDs
-        const characteristicUUID = "2a63"; // Cycling Power Measurement (must be lowercase)
+        const characteristicUUID = "2a63"; // Cycling Power Measurement (lowercase for compatibility)
         const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; // Cycling Power Service
 
         // Variables
@@ -103,6 +103,7 @@
             document.getElementById('timer').innerText = formatTime(elapsedSeconds);
         }
 
+        // Main Connection Function
         async function connectToDevice() {
             let device;
             try {
@@ -112,17 +113,18 @@
                 });
 
                 const server = await device.gatt.connect();
+
+                // Add a small delay for GATT server to initialize
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
                 const service = await server.getPrimaryService(serviceUUID);
                 const characteristic = await service.getCharacteristic(characteristicUUID);
-
-                // Debugging characteristic properties
-                console.log(`Characteristic properties: ${JSON.stringify(characteristic.properties)}`);
 
                 characteristic.startNotifications();
                 characteristic.addEventListener('characteristicvaluechanged', event => {
                     const data = event.target.value;
-                    const power = data.getUint16(0, true); // Extract power in watts
-                    const cadence = data.getUint16(2, true); // Extract cadence in RPM
+                    const power = data.getUint16(0, true); // Extract power
+                    const cadence = data.getUint16(2, true); // Extract cadence
 
                     updateDisplay(power, cadence);
                 });
@@ -132,12 +134,14 @@
             } catch (error) {
                 console.error(error);
 
-                // Debug services and characteristics if connection fails
+                // Run debugDevice to analyze available services and characteristics
                 if (device) await debugDevice(device);
+
                 alert("Connection failed: " + error.message);
             }
         }
 
+        // Debug Function
         async function debugDevice(device) {
             try {
                 const server = await device.gatt.connect();
