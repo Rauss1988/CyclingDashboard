@@ -42,7 +42,8 @@
     <div id="display">
         <div id="power">Power: -- W</div>
         <div id="cadence">Cadence: -- RPM</div>
-        <div id="totalWatts">Total Watts: --</div>
+        <div id="work">Work: -- kJ</div>
+        <div id="averagePower">Average Power: -- W</div>
         <div id="timer">00:00:00</div>
     </div>
     <button onclick="connectToDevice()">Connect to DFC</button>
@@ -56,8 +57,9 @@
         const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; // Cycling Power Service
 
         // Variables
-        let totalWatts = 0;
-        let dataCount = 0;
+        let totalEnergy = 0; // Total work in kilojoules
+        let totalPower = 0; // Sum of all power readings
+        let dataCount = 0; // Count of power readings
         let timerInterval;
         let elapsedSeconds = 0;
 
@@ -72,14 +74,21 @@
         function updateDisplay(power, cadence) {
             const powerElement = document.getElementById('power');
             const cadenceElement = document.getElementById('cadence');
-            const totalWattsElement = document.getElementById('totalWatts');
+            const workElement = document.getElementById('work');
+            const averagePowerElement = document.getElementById('averagePower');
 
             powerElement.innerText = `Power: ${power} W`;
             cadenceElement.innerText = `Cadence: ${cadence} RPM`;
 
-            totalWatts += power;
+            // Calculate total energy (work) in kilojoules
+            totalEnergy += (power * 1) / 1000; // 1 second at current power
+            workElement.innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
+
+            // Update average power
+            totalPower += power;
             dataCount++;
-            totalWattsElement.innerText = `Total Watts: ${totalWatts}`;
+            const averagePower = totalPower / dataCount;
+            averagePowerElement.innerText = `Average Power: ${averagePower.toFixed(2)} W`;
         }
 
         function startTimer() {
@@ -100,7 +109,12 @@
             clearInterval(timerInterval);
             timerInterval = null;
             elapsedSeconds = 0;
+            totalEnergy = 0;
+            totalPower = 0;
+            dataCount = 0;
             document.getElementById('timer').innerText = formatTime(elapsedSeconds);
+            document.getElementById('work').innerText = `Work: -- kJ`;
+            document.getElementById('averagePower').innerText = `Average Power: -- W`;
         }
 
         // Main Connection Function
