@@ -52,7 +52,7 @@
 
     <script>
         // UUIDs
-        const characteristicUUID = "2a63"; // Cycling Power Measurement
+        const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; // Cycling Power Measurement
         const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; // Cycling Power Service
 
         // Variables
@@ -143,24 +143,19 @@
 
         // Debug Function
         async function debugDevice(device) {
-            const logElement = document.createElement("pre");
-            logElement.style = "font-size: 14px; white-space: pre-wrap; margin-top: 20px;";
-            document.body.appendChild(logElement);
-
             try {
                 const server = await device.gatt.connect();
                 const services = await server.getPrimaryServices();
 
                 for (const service of services) {
-                    logElement.innerText += `Service UUID: ${service.uuid}\n`;
+                    console.log(`Service UUID: ${service.uuid}`);
                     const characteristics = await service.getCharacteristics();
                     for (const characteristic of characteristics) {
-                        logElement.innerText += `  Characteristic UUID: ${characteristic.uuid}\n`;
-                        logElement.innerText += `  Properties: ${JSON.stringify(characteristic.properties)}\n`;
+                        console.log(`Characteristic UUID: ${characteristic.uuid}`);
+                        console.log(`Properties: ${JSON.stringify(characteristic.properties)}`);
                     }
                 }
             } catch (error) {
-                logElement.innerText += `Error: ${error.message}\n`;
                 console.error("Debug Error:", error);
             }
         }
