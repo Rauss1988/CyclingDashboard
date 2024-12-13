@@ -52,8 +52,8 @@
 
     <script>
         // UUIDs
-        const characteristicUUID = "2A63"; // Cycling Power Measurement
-        const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb";
+        const characteristicUUID = "2a63"; // Cycling Power Measurement (must be lowercase)
+        const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; // Cycling Power Service
 
         // Variables
         let totalWatts = 0;
@@ -104,8 +104,9 @@
         }
 
         async function connectToDevice() {
+            let device;
             try {
-                const device = await navigator.bluetooth.requestDevice({
+                device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
                     optionalServices: [serviceUUID]
                 });
@@ -113,6 +114,9 @@
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(serviceUUID);
                 const characteristic = await service.getCharacteristic(characteristicUUID);
+
+                // Debugging characteristic properties
+                console.log(`Characteristic properties: ${JSON.stringify(characteristic.properties)}`);
 
                 characteristic.startNotifications();
                 characteristic.addEventListener('characteristicvaluechanged', event => {
@@ -126,12 +130,29 @@
                 alert("Connected to DFC successfully!");
                 startTimer();
             } catch (error) {
-                if (error.message.includes("No Services matching")) {
-                    alert("The required Cycling Power Service (00001818) is not found. Check your device's firmware.");
-                } else {
-                    alert("Failed to connect: " + error.message);
-                }
                 console.error(error);
+
+                // Debug services and characteristics if connection fails
+                if (device) await debugDevice(device);
+                alert("Connection failed: " + error.message);
+            }
+        }
+
+        async function debugDevice(device) {
+            try {
+                const server = await device.gatt.connect();
+                const services = await server.getPrimaryServices();
+
+                for (const service of services) {
+                    console.log(`Service UUID: ${service.uuid}`);
+                    const characteristics = await service.getCharacteristics();
+                    for (const characteristic of characteristics) {
+                        console.log(`Characteristic UUID: ${characteristic.uuid}`);
+                        console.log(`Properties: ${JSON.stringify(characteristic.properties)}`);
+                    }
+                }
+            } catch (error) {
+                console.error("Debug Error:", error);
             }
         }
     </script>
