@@ -1,79 +1,139 @@
-// UUIDs
-const characteristicUUID = "2A63"; // Cycling Power Measurement
-const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cycling Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+        }
+        #display div {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 20px;
+            padding: 10px;
+            border-radius: 10px;
+            background-color: #ffffff;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        button {
+            font-size: 24px;
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007BFF;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cycling Dashboard</h1>
+    <div id="display">
+        <div id="power">Power: -- W</div>
+        <div id="cadence">Cadence: -- RPM</div>
+        <div id="totalWatts">Total Watts: --</div>
+        <div id="timer">00:00:00</div>
+    </div>
+    <button onclick="connectToDevice()">Connect to DFC</button>
+    <button onclick="startTimer()">Start Timer</button>
+    <button onclick="stopTimer()">Stop Timer</button>
+    <button onclick="resetTimer()">Reset Timer</button>
 
-// Variables
-let totalWatts = 0;
-let dataCount = 0;
-let timerInterval;
-let elapsedSeconds = 0;
+    <script>
+        // UUIDs
+        const characteristicUUID = "2A63"; // Cycling Power Measurement
+        const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb";
 
-// Helper Functions
-function formatTime(seconds) {
-    const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-    const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-    const secs = String(seconds % 60).padStart(2, '0');
-    return `${hours}:${minutes}:${secs}`;
-}
+        // Variables
+        let totalWatts = 0;
+        let dataCount = 0;
+        let timerInterval;
+        let elapsedSeconds = 0;
 
-function updateDisplay(power, cadence) {
-    const powerElement = document.getElementById('power');
-    const cadenceElement = document.getElementById('cadence');
-    const totalWattsElement = document.getElementById('totalWatts');
+        // Helper Functions
+        function formatTime(seconds) {
+            const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+            const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+            const secs = String(seconds % 60).padStart(2, '0');
+            return `${hours}:${minutes}:${secs}`;
+        }
 
-    powerElement.innerText = `Power: ${power} W`;
-    cadenceElement.innerText = `Cadence: ${cadence} RPM`;
+        function updateDisplay(power, cadence) {
+            const powerElement = document.getElementById('power');
+            const cadenceElement = document.getElementById('cadence');
+            const totalWattsElement = document.getElementById('totalWatts');
 
-    totalWatts += power;
-    dataCount++;
-    totalWattsElement.innerText = `Total Watts: ${totalWatts}`;
-}
+            powerElement.innerText = `Power: ${power} W`;
+            cadenceElement.innerText = `Cadence: ${cadence} RPM`;
 
-function startTimer() {
-    timerInterval = setInterval(() => {
-        elapsedSeconds++;
-        document.getElementById('timer').innerText = formatTime(elapsedSeconds);
-    }, 1000);
-}
+            totalWatts += power;
+            dataCount++;
+            totalWattsElement.innerText = `Total Watts: ${totalWatts}`;
+        }
 
-function stopTimer() {
-    clearInterval(timerInterval);
-}
+        function startTimer() {
+            if (!timerInterval) {
+                timerInterval = setInterval(() => {
+                    elapsedSeconds++;
+                    document.getElementById('timer').innerText = formatTime(elapsedSeconds);
+                }, 1000);
+            }
+        }
 
-function resetTimer() {
-    clearInterval(timerInterval);
-    elapsedSeconds = 0;
-    document.getElementById('timer').innerText = formatTime(elapsedSeconds);
-}
+        function stopTimer() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
 
-// Bluetooth Connection
-navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [serviceUUID]
-}).then(device => device.gatt.connect())
-  .then(server => server.getPrimaryService(serviceUUID))
-  .then(service => service.getCharacteristic(characteristicUUID))
-  .then(characteristic => {
-      characteristic.startNotifications();
+        function resetTimer() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            elapsedSeconds = 0;
+            document.getElementById('timer').innerText = formatTime(elapsedSeconds);
+        }
 
-      characteristic.addEventListener('characteristicvaluechanged', event => {
-          const data = event.target.value;
-          const power = data.getUint16(0, true); // Extract power in watts
-          const cadence = data.getUint16(2, true); // Extract cadence in RPM
+        async function connectToDevice() {
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [serviceUUID]
+                });
 
-          updateDisplay(power, cadence);
-      });
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(serviceUUID);
+                const characteristic = await service.getCharacteristic(characteristicUUID);
 
-      startTimer();
-  }).catch(console.error);
+                characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', event => {
+                    const data = event.target.value;
+                    const power = data.getUint16(0, true); // Extract power in watts
+                    const cadence = data.getUint16(2, true); // Extract cadence in RPM
 
-// HTML Setup (Add this to your HTML body):
-// <div id="display" style="text-align:center; font-family: Arial, sans-serif;">
-//   <div id="power" style="font-size: 48px; margin: 20px;">Power: -- W</div>
-//   <div id="cadence" style="font-size: 48px; margin: 20px;">Cadence: -- RPM</div>
-//   <div id="totalWatts" style="font-size: 48px; margin: 20px;">Total Watts: --</div>
-//   <div id="timer" style="font-size: 48px; margin: 20px;">00:00:00</div>
-//   <button onclick="startTimer()" style="font-size: 24px; margin: 10px;">Start Timer</button>
-//   <button onclick="stopTimer()" style="font-size: 24px; margin: 10px;">Stop Timer</button>
-//   <button onclick="resetTimer()" style="font-size: 24px; margin: 10px;">Reset Timer</button>
-// </div>
+                    updateDisplay(power, cadence);
+                });
+
+                alert("Connected to DFC successfully!");
+                startTimer();
+            } catch (error) {
+                if (error.message.includes("No Services matching")) {
+                    alert("The required Cycling Power Service (00001818) is not found. Check your device's firmware.");
+                } else {
+                    alert("Failed to connect: " + error.message);
+                }
+                console.error(error);
+            }
+        }
+    </script>
+</body>
+</html>
