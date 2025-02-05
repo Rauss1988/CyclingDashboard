@@ -63,7 +63,6 @@
         let timerInterval;
         let elapsedSeconds = 0;
 
-        // Helper Functions
         function formatTime(seconds) {
             const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
             const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
@@ -72,23 +71,16 @@
         }
 
         function updateDisplay(power, cadence) {
-            const powerElement = document.getElementById('power');
-            const cadenceElement = document.getElementById('cadence');
-            const workElement = document.getElementById('work');
-            const averagePowerElement = document.getElementById('averagePower');
+            document.getElementById('power').innerText = `Power: ${power} W`;
+            document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
+            
+            totalEnergy += (power * 1) / 1000;
+            document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
 
-            powerElement.innerText = `Power: ${power} W`;
-            cadenceElement.innerText = `Cadence: ${cadence} RPM`;
-
-            // Calculate total energy (work) in kilojoules
-            totalEnergy += (power * 1) / 1000; // 1 second at current power
-            workElement.innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
-
-            // Update average power
             totalPower += power;
             dataCount++;
             const averagePower = totalPower / dataCount;
-            averagePowerElement.innerText = `Average Power: ${averagePower.toFixed(2)} W`;
+            document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
         }
 
         function startTimer() {
@@ -117,7 +109,6 @@
             document.getElementById('averagePower').innerText = `Average Power: -- W`;
         }
 
-        // Main Connection Function
         async function connectToDevice() {
             let device;
             try {
@@ -127,19 +118,15 @@
                 });
 
                 const server = await device.gatt.connect();
-
-                // Add a small delay for GATT server to initialize
                 await new Promise(resolve => setTimeout(resolve, 1000));
-
                 const service = await server.getPrimaryService(serviceUUID);
                 const characteristic = await service.getCharacteristic(characteristicUUID);
 
                 characteristic.startNotifications();
                 characteristic.addEventListener('characteristicvaluechanged', event => {
                     const data = event.target.value;
-                    const power = data.getUint16(0, true); // Extract power
-                    const cadence = data.getUint16(2, true); // Extract cadence
-
+                    const power = data.getUint16(0, true);
+                    const cadence = data.getUint16(2, true);
                     updateDisplay(power, cadence);
                 });
 
@@ -147,20 +134,15 @@
                 startTimer();
             } catch (error) {
                 console.error(error);
-
-                // Run debugDevice to analyze available services and characteristics
                 if (device) await debugDevice(device);
-
                 alert("Connection failed: " + error.message);
             }
         }
 
-        // Debug Function
         async function debugDevice(device) {
             try {
                 const server = await device.gatt.connect();
                 const services = await server.getPrimaryServices();
-
                 for (const service of services) {
                     console.log(`Service UUID: ${service.uuid}`);
                     const characteristics = await service.getCharacteristics();
