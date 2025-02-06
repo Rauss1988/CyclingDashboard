@@ -1,113 +1,234 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cycling Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f9;
-        }
-        #display div {
-            font-size: 48px;
-            font-weight: bold;
-            margin: 20px;
-            padding: 10px;
-            border-radius: 10px;
-            background-color: #ffffff;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        button {
-            font-size: 24px;
-            padding: 10px 20px;
-            margin: 10px;
-            cursor: pointer;
-            border: none;
-            border-radius: 5px;
-            background-color: #007BFF;
-            color: white;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cycling Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f9;
+    }
+    #display div {
+      font-size: 48px;
+      font-weight: bold;
+      margin: 20px;
+      padding: 10px;
+      border-radius: 10px;
+      background-color: #ffffff;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    button {
+      font-size: 24px;
+      padding: 10px 20px;
+      margin: 10px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background-color: #007BFF;
+      color: white;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
 </head>
 <body>
-    <h1>Cycling Dashboard</h1>
-    <div id="display">
-        <div id="power">Power: -- W</div>
-        <div id="cadence">Cadence: -- RPM</div>
-        <div id="work">Work: -- kJ</div>
-        <div id="averagePower">Average Power: -- W</div>
-        <div id="timer">00:00:00</div>
-    </div>
-    <button onclick="connectToDevice()">Connect to DFC</button>
-    <button onclick="startTimer()">Start Timer</button>
-    <button onclick="stopTimer()">Stop Timer</button>
-    <button onclick="resetTimer()">Reset Timer</button>
+  <h1>Cycling Dashboard</h1>
+  <div id="display">
+    <div id="power">Power: -- W</div>
+    <div id="cadence">Cadence: -- RPM</div>
+    <div id="work">Work: -- kJ</div>
+    <div id="averagePower">Average Power: -- W</div>
+    <div id="timer">00:00:00</div>
+  </div>
+  <button onclick="connectToDevice()">Connect to DFC</button>
+  <button onclick="startTimer()">Start Timer</button>
+  <button onclick="stopTimer()">Stop Timer</button>
+  <button onclick="resetTimer()">Reset Timer</button>
 
-    <script>
-        // UUIDs
-        const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; // Cycling Power Measurement
-        const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; // Cycling Power Service
+  <script>
+    /***********************************************************************
+     * BLE UUIDs (using standard Cycling Power Service / Measurement)
+     ***********************************************************************/
+    const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; // Cycling Power Measurement
+    const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb";          // Cycling Power Service
 
-        // Variables
-        let totalEnergy = 0;
-        let totalPower = 0;
-        let dataCount = 0;
-        let timerInterval;
-        let elapsedSeconds = 0;
-        let characteristic;
+    /***********************************************************************
+     * Global Variables for Data and Timing
+     ***********************************************************************/
+    let totalEnergy = 0;   // Accumulated work in kJ
+    let totalPower = 0;    // Sum of all instantaneous power readings (for average)
+    let dataCount = 0;     // Number of power readings received
+    let timerInterval;
+    let elapsedSeconds = 0;
+    let characteristic;    // BLE characteristic reference
 
-        function formatTime(seconds) {
-            const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-            const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-            const secs = String(seconds % 60).padStart(2, '0');
-            return `${hours}:${minutes}:${secs}`;
+    // For cadence calculation from crank revolution data:
+    let prevCrankRevs = null;
+    let prevCrankEventTime = null;
+
+    // For energy calculation based on notification timing:
+    let lastNotificationTimestamp = null;
+
+    /***********************************************************************
+     * Utility Functions
+     ***********************************************************************/
+    function formatTime(seconds) {
+      const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+      const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+      const secs = String(seconds % 60).padStart(2, '0');
+      return `${hours}:${minutes}:${secs}`;
+    }
+
+    /***********************************************************************
+     * Display Update Function
+     *
+     * - power: instantaneous power (W)
+     * - cadence: computed cadence (RPM) or null if unavailable
+     * - dt: time (in seconds) since the previous notification
+     ***********************************************************************/
+    function updateDisplay(power, cadence, dt) {
+      document.getElementById('power').innerText = `Power: ${power} W`;
+      document.getElementById('cadence').innerText = 
+        `Cadence: ${cadence !== null ? cadence.toFixed(0) : '--'} RPM`;
+
+      // Compute work: (W * seconds = Joules), then convert to kilojoules.
+      totalEnergy += (power * dt) / 1000;
+      document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
+
+      // Update average power
+      totalPower += power;
+      dataCount++;
+      const averagePower = totalPower / dataCount;
+      document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
+    }
+
+    /***********************************************************************
+     * Timer Functions
+     ***********************************************************************/
+    function startTimer() {
+      if (!timerInterval) {
+        timerInterval = setInterval(() => {
+          elapsedSeconds++;
+          document.getElementById('timer').innerText = formatTime(elapsedSeconds);
+        }, 1000);
+      }
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    function resetTimer() {
+      stopTimer();
+      elapsedSeconds = 0;
+      totalEnergy = 0;
+      totalPower = 0;
+      dataCount = 0;
+      lastNotificationTimestamp = null;
+      prevCrankRevs = null;
+      prevCrankEventTime = null;
+      document.getElementById('timer').innerText = formatTime(elapsedSeconds);
+      document.getElementById('work').innerText = `Work: -- kJ`;
+      document.getElementById('averagePower').innerText = `Average Power: -- W`;
+      document.getElementById('power').innerText = `Power: -- W`;
+      document.getElementById('cadence').innerText = `Cadence: -- RPM`;
+    }
+
+    /***********************************************************************
+     * Connect to DFC Device via Web Bluetooth
+     ***********************************************************************/
+    async function connectToDevice() {
+      try {
+        console.log("Requesting Bluetooth Device...");
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [serviceUUID] }]
+        });
+        console.log("Connecting to GATT Server...");
+        const server = await device.gatt.connect();
+        console.log("Getting Cycling Power Service...");
+        const service = await server.getPrimaryService(serviceUUID);
+        console.log("Getting Cycling Power Measurement Characteristic...");
+        characteristic = await service.getCharacteristic(characteristicUUID);
+        console.log("Starting Notifications...");
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+        console.log("Connected to DFC and notifications started.");
+      } catch (error) {
+        console.error("Error connecting to device:", error);
+      }
+    }
+
+    /***********************************************************************
+     * BLE Notification Handler
+     *
+     * This function parses the incoming data:
+     *   - Reads the flags (first 2 bytes)
+     *   - Reads instantaneous power (next 2 bytes, signed integer)
+     *   - If the "Crank Revolution Data Present" flag is set (bit 4),
+     *     it reads cumulative crank revolutions and last crank event time,
+     *     and then computes cadence (RPM) from the differences.
+     *
+     * It also calculates the time delta (dt) from the previous notification
+     * to better compute the work (energy) done.
+     ***********************************************************************/
+    function handleCharacteristicValueChanged(event) {
+      const value = event.target.value;
+      let offset = 0;
+
+      // Read Flags (2 bytes, little endian)
+      const flags = value.getUint16(offset, true);
+      offset += 2;
+
+      // Read Instantaneous Power (2 bytes, signed, little endian)
+      const instantaneousPower = value.getInt16(offset, true);
+      offset += 2;
+
+      // Initialize cadence as null (in case crank data is not present)
+      let cadence = null;
+
+      // If Crank Revolution Data is present (bit 4, i.e. 0x10)
+      if (flags & 0x10) {
+        const cumulativeCrankRevolutions = value.getUint16(offset, true);
+        offset += 2;
+        const lastCrankEventTime = value.getUint16(offset, true);
+        offset += 2;
+
+        // If we have previous crank data, compute the cadence.
+        if (prevCrankRevs !== null && prevCrankEventTime !== null) {
+          let deltaRevs = cumulativeCrankRevolutions - prevCrankRevs;
+          let deltaTime = lastCrankEventTime - prevCrankEventTime;
+          // Handle rollover for the 16-bit event time (max value 65535)
+          if (deltaTime < 0) {
+            deltaTime += 65536;
+          }
+          // The last crank event time is in units of 1/1024 seconds.
+          const dtSeconds = deltaTime / 1024;
+          if (dtSeconds > 0) {
+            cadence = (deltaRevs / dtSeconds) * 60; // Convert to RPM
+          }
         }
+        // Save the current crank data for the next notification.
+        prevCrankRevs = cumulativeCrankRevolutions;
+        prevCrankEventTime = lastCrankEventTime;
+      }
 
-        function updateDisplay(power, cadence) {
-            document.getElementById('power').innerText = `Power: ${power} W`;
-            document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
-            
-            totalEnergy += (power * 1) / 1000;
-            document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
+      // Determine the time elapsed (dt) since the last notification.
+      const now = Date.now();
+      let dt = 1; // default 1 second if no previous timestamp available
+      if (lastNotificationTimestamp !== null) {
+        dt = (now - lastNotificationTimestamp) / 1000;
+      }
+      lastNotificationTimestamp = now;
 
-            totalPower += power;
-            dataCount++;
-            const averagePower = totalPower / dataCount;
-            document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
-        }
-
-        function startTimer() {
-            if (!timerInterval) {
-                timerInterval = setInterval(() => {
-                    elapsedSeconds++;
-                    document.getElementById('timer').innerText = formatTime(elapsedSeconds);
-                }, 1000);
-            }
-        }
-
-        function stopTimer() {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
-
-        function resetTimer() {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            elapsedSeconds = 0;
-            totalEnergy = 0;
-            totalPower = 0;
-            dataCount = 0;
-            document.getElementById('timer').innerText = formatTime(elapsedSeconds);
-            document.getElementById('work').innerText = `Work: -- kJ`;
-            document.getElementById('averagePower').innerText = `Average Power: -- W`;
-        }
-
-        async function connectToDevice()
+      updateDisplay(instantaneousPower, cadence, dt);
+    }
+  </script>
+</body>
+</html>
