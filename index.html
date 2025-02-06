@@ -57,11 +57,12 @@
         const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; // Cycling Power Service
 
         // Variables
-        let totalEnergy = 0; // Total work in kilojoules
-        let totalPower = 0; // Sum of all power readings
-        let dataCount = 0; // Count of power readings
+        let totalEnergy = 0;
+        let totalPower = 0;
+        let dataCount = 0;
         let timerInterval;
         let elapsedSeconds = 0;
+        let characteristic;
 
         function formatTime(seconds) {
             const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
@@ -109,52 +110,4 @@
             document.getElementById('averagePower').innerText = `Average Power: -- W`;
         }
 
-        async function connectToDevice() {
-            let device;
-            try {
-                device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: [serviceUUID]
-                });
-
-                const server = await device.gatt.connect();
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const service = await server.getPrimaryService(serviceUUID);
-                const characteristic = await service.getCharacteristic(characteristicUUID);
-
-                characteristic.startNotifications();
-                characteristic.addEventListener('characteristicvaluechanged', event => {
-                    const data = event.target.value;
-                    const power = data.getUint16(0, true);
-                    const cadence = data.getUint16(2, true);
-                    updateDisplay(power, cadence);
-                });
-
-                alert("Connected to DFC successfully!");
-                startTimer();
-            } catch (error) {
-                console.error(error);
-                if (device) await debugDevice(device);
-                alert("Connection failed: " + error.message);
-            }
-        }
-
-        async function debugDevice(device) {
-            try {
-                const server = await device.gatt.connect();
-                const services = await server.getPrimaryServices();
-                for (const service of services) {
-                    console.log(`Service UUID: ${service.uuid}`);
-                    const characteristics = await service.getCharacteristics();
-                    for (const characteristic of characteristics) {
-                        console.log(`Characteristic UUID: ${characteristic.uuid}`);
-                        console.log(`Properties: ${JSON.stringify(characteristic.properties)}`);
-                    }
-                }
-            } catch (error) {
-                console.error("Debug Error:", error);
-            }
-        }
-    </script>
-</body>
-</html>
+        async function connectToDevice()
