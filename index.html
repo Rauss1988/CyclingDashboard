@@ -1,122 +1,155 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cycling Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f9;
-        }
-        #display div {
-            font-size: 48px;
-            font-weight: bold;
-            margin: 20px;
-            padding: 10px;
-            border-radius: 10px;
-            background-color: #ffffff;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        button {
-            font-size: 24px;
-            padding: 10px 20px;
-            margin: 10px;
-            cursor: pointer;
-            border: none;
-            border-radius: 5px;
-            background-color: #007BFF;
-            color: white;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cycling Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f9;
+    }
+    #display div {
+      font-size: 48px;
+      font-weight: bold;
+      margin: 20px;
+      padding: 10px;
+      border-radius: 10px;
+      background-color: #ffffff;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    button {
+      font-size: 24px;
+      padding: 10px 20px;
+      margin: 10px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background-color: #007BFF;
+      color: white;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
 </head>
 <body>
-    <h1>Cycling Dashboard</h1>
-    <div id="display">
-        <div id="power">Power: -- W</div>
-        <div id="cadence">Cadence: -- RPM</div>
-        <div id="work">Work: -- kJ</div>
-        <div id="averagePower">Average Power: -- W</div>
-        <div id="timer">00:00:00</div>
-    </div>
-    <button onclick="connectToDevice()">Connect to DFC</button>
-    <button onclick="startTimer()">Start Timer</button>
-    <button onclick="stopTimer()">Stop Timer</button>
-    <button onclick="resetTimer()">Reset Timer</button>
+  <h1>Cycling Dashboard</h1>
+  <div id="display">
+    <div id="power">Power: -- W</div>
+    <div id="cadence">Cadence: -- RPM</div>
+    <div id="work">Work: -- kJ</div>
+    <div id="averagePower">Average Power: -- W</div>
+    <div id="timer">00:00:00</div>
+  </div>
+  <button onclick="connectToDevice()">Connect to DFC</button>
+  <button onclick="startTimer()">Start Timer</button>
+  <button onclick="stopTimer()">Stop Timer</button>
+  <button onclick="resetTimer()">Reset Timer</button>
 
-    <script>
-        // UUIDs
-        const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; 
-        const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; 
+  <script>
+    const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; 
+    const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; 
 
-        let totalEnergy = 0;
-        let totalPower = 0;
-        let dataCount = 0;
-        let timerInterval;
-        let elapsedSeconds = 0;
-        let characteristic;
+    let totalEnergy = 0;
+    let totalPower = 0;
+    let dataCount = 0;
+    let timerInterval;
+    let elapsedSeconds = 0;
+    let characteristic;
 
-        function formatTime(seconds) {
-            const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-            const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-            const secs = String(seconds % 60).padStart(2, '0');
-            return `${hours}:${minutes}:${secs}`;
+    function formatTime(seconds) {
+        const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+        const secs = String(seconds % 60).padStart(2, '0');
+        return `${hours}:${minutes}:${secs}`;
+    }
+
+    function updateTimer() {
+        elapsedSeconds++;
+        document.getElementById("timer").innerText = formatTime(elapsedSeconds);
+    }
+
+    function startTimer() {
+        if (!timerInterval) {
+            timerInterval = setInterval(updateTimer, 1000);
         }
+    }
 
-        function updateDisplay(power, cadence) {
-            document.getElementById('power').innerText = `Power: ${power} W`;
-            document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
+    function stopTimer() {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+
+    function resetTimer() {
+        stopTimer();
+        elapsedSeconds = 0;
+        document.getElementById("timer").innerText = "00:00:00";
+    }
+
+    function updateDisplay(power, cadence) {
+        document.getElementById('power').innerText = `Power: ${power} W`;
+        document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
+        
+        totalEnergy += (power * 1) / 1000;
+        document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
+        
+        totalPower += power;
+        dataCount++;
+        const averagePower = totalPower / dataCount;
+        document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
+    }
+
+    async function connectToDevice() {
+        try {
+            let device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [serviceUUID]
+            });
+
+            const server = await device.gatt.connect();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            const service = await server.getPrimaryService(serviceUUID);
+            characteristic = await service.getCharacteristic(characteristicUUID);
+            characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
             
-            totalEnergy += (power * 1) / 1000;
-            document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
+            alert("Connected to DFC successfully!");
+            startTimer();
+        } catch (error) {
+            console.error(error);
+            alert("Connection failed: " + error.message);
+        }
+    }
 
-            totalPower += power;
-            dataCount++;
-            const averagePower = totalPower / dataCount;
-            document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
+    function handleCharacteristicValueChanged(event) {
+        const data = new Uint8Array(event.target.value.buffer);
+        console.log("Raw Bluetooth Data:", data);
+
+        if (data.byteLength < 8) {
+            console.warn("Received data too short, skipping.");
+            return;
         }
 
-        async function connectToDevice() {
-            try {
-                let device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: [serviceUUID]
-                });
+        // Extract Power (16-bit value from Bytes 0-1)
+        let power = data[0] | (data[1] << 8);
 
-                const server = await device.gatt.connect();
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const service = await server.getPrimaryService(serviceUUID);
-                characteristic = await service.getCharacteristic(characteristicUUID);
-
-                characteristic.startNotifications();
-                characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-                
-                alert("Connected to DFC successfully!");
-                startTimer();
-            } catch (error) {
-                console.error(error);
-                alert("Connection failed: " + error.message);
-            }
+        // Extract Cadence from Byte 7 (Index 7)
+        let rawCadence = data[7]; 
+        let cadence = rawCadence;
+        
+        if (cadence > 200) {
+            cadence = cadence / 2;  // Some devices report cadence doubled
         }
 
-        function handleCharacteristicValueChanged(event) {
-            const data = event.target.value;
-            const raw = new Uint8Array(data.buffer);
-            console.log("Raw Bluetooth Data:", raw);
-            
-            const power = data.getUint16(0, true); 
-            const cadence = data.getUint16(6, true) / 2; // Adjust divisor as needed
-            
-            console.log(`Parsed Power: ${power} W, Parsed Cadence: ${cadence} RPM`);
-            updateDisplay(power, cadence);
-        }
-    </script>
+        console.log(`Parsed Power: ${power} W, Parsed Cadence: ${cadence} RPM`);
+        updateDisplay(power, cadence);
+    }
+  </script>
 </body>
 </html>
