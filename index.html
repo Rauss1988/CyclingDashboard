@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cycling Dashboard</title>
   <style>
     body {
@@ -28,7 +28,7 @@
       cursor: pointer;
       border: none;
       border-radius: 5px;
-      background-color: #007BFF;
+      background-color: #007bff;
       color: white;
       transition: background-color 0.3s;
     }
@@ -52,103 +52,109 @@
   <button onclick="resetTimer()">Reset Timer</button>
 
   <script>
-    const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; 
-    const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; 
+    // Bluetooth service and characteristic UUIDs
+    const CHARACTERISTIC_UUID = "00002a63-0000-1000-8000-00805f9b34fb";
+    const SERVICE_UUID = "00001818-0000-1000-8000-00805f9b34fb";
 
+    // Constants for data extraction
+    const MINIMUM_DATA_LENGTH = 8;
+    const POWER_OFFSET = 3;    // Bytes 3-4 (little-endian)
+    const CADENCE_OFFSET = 7;  // Byte 7
+
+    // Variables for tracking metrics and timer
     let totalEnergy = 0;
     let totalPower = 0;
     let dataCount = 0;
-    let timerInterval;
+    let timerInterval = null;
     let elapsedSeconds = 0;
     let characteristic;
 
+    // Format seconds into HH:MM:SS
     function formatTime(seconds) {
-        const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-        const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-        const secs = String(seconds % 60).padStart(2, '0');
-        return `${hours}:${minutes}:${secs}`;
+      const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+      const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+      const secs = String(seconds % 60).padStart(2, '0');
+      return `${hours}:${minutes}:${secs}`;
     }
 
     function updateTimer() {
-        elapsedSeconds++;
-        document.getElementById("timer").innerText = formatTime(elapsedSeconds);
+      elapsedSeconds++;
+      document.getElementById("timer").innerText = formatTime(elapsedSeconds);
     }
 
     function startTimer() {
-        if (!timerInterval) {
-            timerInterval = setInterval(updateTimer, 1000);
-        }
+      if (!timerInterval) {
+        timerInterval = setInterval(updateTimer, 1000);
+      }
     }
 
     function stopTimer() {
-        clearInterval(timerInterval);
-        timerInterval = null;
+      clearInterval(timerInterval);
+      timerInterval = null;
     }
 
     function resetTimer() {
-        stopTimer();
-        elapsedSeconds = 0;
-        document.getElementById("timer").innerText = "00:00:00";
+      stopTimer();
+      elapsedSeconds = 0;
+      document.getElementById("timer").innerText = "00:00:00";
     }
 
     function updateDisplay(power, cadence) {
-        document.getElementById('power').innerText = `Power: ${power} W`;
-        document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
-        
-        totalEnergy += (power * 1) / 1000;
-        document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
-        
-        totalPower += power;
-        dataCount++;
-        const averagePower = totalPower / dataCount;
-        document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
+      document.getElementById('power').innerText = `Power: ${power} W`;
+      document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
+
+      // Calculate energy (in kJ): assuming power is sampled per second
+      totalEnergy += (power * 1) / 1000;
+      document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
+
+      totalPower += power;
+      dataCount++;
+      const averagePower = totalPower / dataCount;
+      document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
     }
 
     async function connectToDevice() {
-        try {
-            let device = await navigator.bluetooth.requestDevice({
-                acceptAllDevices: true,
-                optionalServices: [serviceUUID]
-            });
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [SERVICE_UUID]
+        });
 
-            const server = await device.gatt.connect();
-            await new Promise(resolve => setTimeout(resolve, 1000));
+        const server = await device.gatt.connect();
+        // Short delay to ensure the connection is established
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-            const service = await server.getPrimaryService(serviceUUID);
-            characteristic = await service.getCharacteristic(characteristicUUID);
-            characteristic.startNotifications();
-            characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-            
-            alert("Connected to DFC successfully!");
-            startTimer();
-        } catch (error) {
-            console.error(error);
-            alert("Connection failed: " + error.message);
-        }
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+
+        alert("Connected to DFC successfully!");
+        startTimer();
+      } catch (error) {
+        console.error("Bluetooth connection error:", error);
+        alert("Connection failed: " + error.message);
+      }
     }
 
+    // Use DataView for accurate extraction of multi-byte values
     function handleCharacteristicValueChanged(event) {
-        const data = new Uint8Array(event.target.value.buffer);
-        console.log("Raw Bluetooth Data:", data);
+      const dataView = event.target.value;
 
-        if (data.byteLength < 8) {
-            console.warn("Received data too short, skipping.");
-            return;
-        }
+      if (dataView.byteLength < MINIMUM_DATA_LENGTH) {
+        console.warn("Received data too short, skipping.");
+        return;
+      }
 
-        // Extract Power (16-bit value from Bytes 0-1)
-        let power = data[0] | (data[1] << 8);
+      // Extract power from bytes 3-4 (little-endian)
+      const power = dataView.getUint16(POWER_OFFSET, true);
 
-        // Extract Cadence from Byte 7 (Index 7)
-        let rawCadence = data[7]; 
-        let cadence = rawCadence;
-        
-        if (cadence > 200) {
-            cadence = cadence / 2;  // Some devices report cadence doubled
-        }
+      // Extract cadence from byte 7 and adjust if the value is inflated
+      const rawCadence = dataView.getUint8(CADENCE_OFFSET);
+      const cadence = rawCadence > 200 ? rawCadence / 2 : rawCadence;
 
-        console.log(`Parsed Power: ${power} W, Parsed Cadence: ${cadence} RPM`);
-        updateDisplay(power, cadence);
+      console.log(`🚴 Power: ${power} W, Cadence: ${cadence} RPM`);
+      updateDisplay(power, cadence);
     }
   </script>
 </body>
