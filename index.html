@@ -137,10 +137,10 @@
 
       console.log("🔹 Raw Data:", data);
 
-      // ✅ Power: Now using Bytes 6-7 (was previously incorrect)
-      let power = data[6] | (data[7] << 8);
+      // ✅ Fix Power: Use Bytes 4-5 instead of 6-7 (removes accumulation)
+      let power = (data[5] << 8) | data[4];
 
-      // ✅ Cadence: Now using Bytes 2-3 (swapped from 6-7)
+      // ✅ Cadence remains from Bytes 2-3
       let cadence = data[2] | (data[3] << 8);
 
       console.log(`✅ Power: ${power} W, ✅ Cadence: ${cadence} RPM`);
