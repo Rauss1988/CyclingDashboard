@@ -137,11 +137,19 @@
 
       console.log("🔹 Raw Data:", data);
 
-      // ✅ Fix Power: Use Bytes 4-5 instead of 6-7 (removes accumulation)
-      let power = (data[5] << 8) | data[4];
+      // 🚴 Fix Power: Using Bytes 2-3 (adjusting for endianness)
+      let power = (data[2] | (data[3] << 8));
 
-      // ✅ Cadence remains from Bytes 2-3
-      let cadence = data[2] | (data[3] << 8);
+      // 🏆 Apply Scaling if Needed
+      if (power > 2000) {
+        power = power / 10; // Adjust scaling if power is too high
+      }
+
+      // 🔄 Fix Cadence: Using Byte 4 (raw cadence)
+      let rawCadence = data[4];
+
+      // 🏁 If bike is not moving, cadence should be 0
+      let cadence = rawCadence > 0 && rawCadence < 200 ? rawCadence : 0;
 
       console.log(`✅ Power: ${power} W, ✅ Cadence: ${cadence} RPM`);
       updateDisplay(power, cadence);
