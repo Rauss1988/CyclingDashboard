@@ -52,16 +52,9 @@
   <button onclick="resetTimer()">Reset Timer</button>
 
   <script>
-    // Bluetooth service and characteristic UUIDs
     const CHARACTERISTIC_UUID = "00002a63-0000-1000-8000-00805f9b34fb";
     const SERVICE_UUID = "00001818-0000-1000-8000-00805f9b34fb";
 
-    // Constants for data extraction
-    const MINIMUM_DATA_LENGTH = 8;
-    const POWER_OFFSET = 3;    // Bytes 3-4 (little-endian)
-    const CADENCE_OFFSET = 7;  // Byte 7
-
-    // Variables for tracking metrics and timer
     let totalEnergy = 0;
     let totalPower = 0;
     let dataCount = 0;
@@ -69,7 +62,6 @@
     let elapsedSeconds = 0;
     let characteristic;
 
-    // Format seconds into HH:MM:SS
     function formatTime(seconds) {
       const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
       const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
@@ -103,7 +95,6 @@
       document.getElementById('power').innerText = `Power: ${power} W`;
       document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
 
-      // Calculate energy (in kJ): assuming power is sampled per second
       totalEnergy += (power * 1) / 1000;
       document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
 
@@ -121,7 +112,6 @@
         });
 
         const server = await device.gatt.connect();
-        // Short delay to ensure the connection is established
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         const service = await server.getPrimaryService(SERVICE_UUID);
@@ -137,23 +127,23 @@
       }
     }
 
-    // Use DataView for accurate extraction of multi-byte values
     function handleCharacteristicValueChanged(event) {
-      const dataView = event.target.value;
+      const data = new Uint8Array(event.target.value.buffer);
 
-      if (dataView.byteLength < MINIMUM_DATA_LENGTH) {
+      if (data.byteLength < 8) {
         console.warn("Received data too short, skipping.");
         return;
       }
 
-      // Extract power from bytes 3-4 (little-endian)
-      const power = dataView.getUint16(POWER_OFFSET, true);
+      console.log("🔹 Raw Data:", data);
 
-      // Extract cadence from byte 7 and adjust if the value is inflated
-      const rawCadence = dataView.getUint8(CADENCE_OFFSET);
-      const cadence = rawCadence > 200 ? rawCadence / 2 : rawCadence;
+      // ✅ Power: Now using Bytes 6-7 (was previously incorrect)
+      let power = data[6] | (data[7] << 8);
 
-      console.log(`🚴 Power: ${power} W, Cadence: ${cadence} RPM`);
+      // ✅ Cadence: Now using Bytes 2-3 (swapped from 6-7)
+      let cadence = data[2] | (data[3] << 8);
+
+      console.log(`✅ Power: ${power} W, ✅ Cadence: ${cadence} RPM`);
       updateDisplay(power, cadence);
     }
   </script>
