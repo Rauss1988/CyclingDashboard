@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cycling Dashboard</title>
   <style>
     body {
@@ -28,7 +28,7 @@
       cursor: pointer;
       border: none;
       border-radius: 5px;
-      background-color: #007bff;
+      background-color: #007BFF;
       color: white;
       transition: background-color 0.3s;
     }
@@ -42,8 +42,7 @@
   <div id="display">
     <div id="power">Power: -- W</div>
     <div id="cadence">Cadence: -- RPM</div>
-    <div id="work">Work: -- kJ</div>
-    <div id="averagePower">Average Power: -- W</div>
+    <div id="work">Work: -- J</div>
     <div id="timer">00:00:00</div>
   </div>
   <button onclick="connectToDevice()">Connect to DFC</button>
@@ -52,107 +51,92 @@
   <button onclick="resetTimer()">Reset Timer</button>
 
   <script>
-    const CHARACTERISTIC_UUID = "00002a63-0000-1000-8000-00805f9b34fb";
-    const SERVICE_UUID = "00001818-0000-1000-8000-00805f9b34fb";
+    const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; 
+    const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; 
 
-    let totalEnergy = 0;
-    let totalPower = 0;
-    let dataCount = 0;
-    let timerInterval = null;
+    let timerInterval;
     let elapsedSeconds = 0;
     let characteristic;
 
     function formatTime(seconds) {
-      const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-      const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-      const secs = String(seconds % 60).padStart(2, '0');
-      return `${hours}:${minutes}:${secs}`;
+        const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+        const secs = String(seconds % 60).padStart(2, '0');
+        return `${hours}:${minutes}:${secs}`;
     }
 
     function updateTimer() {
-      elapsedSeconds++;
-      document.getElementById("timer").innerText = formatTime(elapsedSeconds);
+        elapsedSeconds++;
+        document.getElementById("timer").innerText = formatTime(elapsedSeconds);
     }
 
     function startTimer() {
-      if (!timerInterval) {
-        timerInterval = setInterval(updateTimer, 1000);
-      }
+        if (!timerInterval) {
+            timerInterval = setInterval(updateTimer, 1000);
+        }
     }
 
     function stopTimer() {
-      clearInterval(timerInterval);
-      timerInterval = null;
+        clearInterval(timerInterval);
+        timerInterval = null;
     }
 
     function resetTimer() {
-      stopTimer();
-      elapsedSeconds = 0;
-      document.getElementById("timer").innerText = "00:00:00";
+        stopTimer();
+        elapsedSeconds = 0;
+        document.getElementById("timer").innerText = "00:00:00";
     }
 
-    function updateDisplay(power, cadence) {
-      document.getElementById('power').innerText = `Power: ${power} W`;
-      document.getElementById('cadence').innerText = `Cadence: ${cadence > 0 ? cadence : '--'} RPM`;
-
-      totalEnergy += (power * 1) / 1000;
-      document.getElementById('work').innerText = `Work: ${totalEnergy.toFixed(2)} kJ`;
-
-      totalPower += power;
-      dataCount++;
-      const averagePower = totalPower / dataCount;
-      document.getElementById('averagePower').innerText = `Average Power: ${averagePower.toFixed(2)} W`;
+    function updateDisplay(watts, cadence, totalWork) {
+        document.getElementById('power').innerText = `Power: ${watts} W`;
+        document.getElementById('cadence').innerText = `Cadence: ${cadence.toFixed(0)} RPM`;
+        document.getElementById('work').innerText = `Work: ${totalWork} J`;
     }
 
     async function connectToDevice() {
-      try {
-        const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [SERVICE_UUID]
-        });
+        try {
+            let device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [serviceUUID]
+            });
 
-        const server = await device.gatt.connect();
-        await new Promise(resolve => setTimeout(resolve, 1000));
+            const server = await device.gatt.connect();
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-        await characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-
-        alert("Connected to DFC successfully!");
-        startTimer();
-      } catch (error) {
-        console.error("Bluetooth connection error:", error);
-        alert("Connection failed: " + error.message);
-      }
+            const service = await server.getPrimaryService(serviceUUID);
+            characteristic = await service.getCharacteristic(characteristicUUID);
+            characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+            
+            alert("Connected to DFC successfully!");
+            startTimer();
+        } catch (error) {
+            console.error(error);
+            alert("Connection failed: " + error.message);
+        }
     }
 
     function handleCharacteristicValueChanged(event) {
-      const data = new Uint8Array(event.target.value.buffer);
+        const data = new Uint8Array(event.target.value.buffer);
+        console.log("Raw Bluetooth Data:", data);
 
-      if (data.byteLength < 8) {
-        console.warn("Received data too short, skipping.");
-        return;
-      }
+        if (data.byteLength < 8) {
+            console.warn("Received data too short, skipping.");
+            return;
+        }
 
-      console.log("🔹 Raw Data:", data);
+        // Extract Watts (actual power output)
+        let watts = data[2] | (data[3] << 8);  // Bytes 2-3 (confirmed watts)
 
-      // ✅ Power: Using Bytes 2-3 (correct location)
-      let power = (data[2] | (data[3] << 8));
+        // Extract Total Work from accumulating value
+        let totalWork = data[6] | (data[7] << 8);  // Bytes 6-7 (accumulating power)
 
-      // 🏁 Apply Scaling if Power is Too Large
-      if (power > 2000) {
-        power = power / 10; // Adjust if needed
-      }
+        // Extract Cadence (Likely Bytes 4-5)
+        let rawCadence = data[4] | (data[5] << 8);
+        let cadence = rawCadence / 4;  // Adjust scaling
 
-      // 🔄 Fix Cadence: Now using Byte 5 instead of 4
-      let rawCadence = data[5];
-
-      // 🚴 Scale Down Large Cadence Values
-      let cadence = (rawCadence > 200) ? rawCadence / 2 : rawCadence;
-
-      console.log(`✅ Power: ${power} W, ✅ Cadence: ${cadence} RPM`);
-      updateDisplay(power, cadence);
+        console.log(`Watts: ${watts} W, Cadence: ${cadence} RPM, Work: ${totalWork} J`);
+        updateDisplay(watts, cadence, totalWork);
     }
   </script>
 </body>
