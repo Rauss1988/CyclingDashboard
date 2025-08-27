@@ -1,143 +1,170 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cycling Dashboard</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin: 0;
-      padding: 0;
-      background-color: #f4f4f9;
-    }
-    #display div {
-      font-size: 48px;
-      font-weight: bold;
-      margin: 20px;
-      padding: 10px;
-      border-radius: 10px;
-      background-color: #ffffff;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    button {
-      font-size: 24px;
-      padding: 10px 20px;
-      margin: 10px;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      background-color: #007BFF;
-      color: white;
-      transition: background-color 0.3s;
-    }
-    button:hover {
-      background-color: #0056b3;
-    }
-  </style>
-</head>
-<body>
-  <h1>Cycling Dashboard</h1>
-  <div id="display">
-    <div id="power">Power: -- W</div>
-    <div id="cadence">Cadence: -- RPM</div>
-    <div id="work">Work: -- J</div>
-    <div id="timer">00:00:00</div>
-  </div>
-  <button onclick="connectToDevice()">Connect to DFC</button>
-  <button onclick="startTimer()">Start Timer</button>
-  <button onclick="stopTimer()">Stop Timer</button>
-  <button onclick="resetTimer()">Reset Timer</button>
+<script>
+  // UUID constants for FTMS and Cycling Power Service (CPS)
+  const FTMS_SERVICE = "00001826-0000-1000-8000-00805f9b34fb";
+  const FTMS_INDOOR_BIKE_DATA = "00002ad2-0000-1000-8000-00805f9b34fb";
 
-  <script>
-    const characteristicUUID = "00002a63-0000-1000-8000-00805f9b34fb"; 
-    const serviceUUID = "00001818-0000-1000-8000-00805f9b34fb"; 
+  const CPS_SERVICE = "00001818-0000-1000-8000-00805f9b34fb";
+  const CPS_MEAS = "00002a63-0000-1000-8000-00805f9b34fb";
 
-    let timerInterval;
-    let elapsedSeconds = 0;
-    let characteristic;
+  let timerInterval = null;
+  let elapsedSeconds = 0;
 
-    function formatTime(seconds) {
-        const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-        const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-        const secs = String(seconds % 60).padStart(2, '0');
-        return `${hours}:${minutes}:${secs}`;
-    }
-
-    function updateTimer() {
+  function formatTime(s) {
+    const h = String(Math.floor(s / 3600)).padStart(2, "0");
+    const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+    const sec = String(s % 60).padStart(2, "0");
+    return `${h}:${m}:${sec}`;
+  }
+  function startTimer() {
+    if (!timerInterval) {
+      timerInterval = setInterval(() => {
         elapsedSeconds++;
         document.getElementById("timer").innerText = formatTime(elapsedSeconds);
+      }, 1000);
     }
+  }
+  function stopTimer() {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  function resetTimer() {
+    stopTimer();
+    elapsedSeconds = 0;
+    document.getElementById("timer").innerText = "00:00:00";
+  }
+  function updateDisplay(watts, cadence, totalJoules) {
+    document.getElementById("power").innerText = `Power: ${watts} W`;
+    document.getElementById("cadence").innerText = `Cadence: ${Math.round(cadence)} RPM`;
+    document.getElementById("work").innerText = `Work: ${totalJoules} J`;
+  }
 
-    function startTimer() {
-        if (!timerInterval) {
-            timerInterval = setInterval(updateTimer, 1000);
+  // Little endian helpers
+  const u8 = (dv, o) => dv.getUint8(o);
+  const u16 = (dv, o) => dv.getUint16(o, true);
+  const s16 = (dv, o) => dv.getInt16(o, true);
+
+  async function connectToDevice() {
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [FTMS_SERVICE] }, { services: [CPS_SERVICE] }],
+        optionalServices: [FTMS_SERVICE, CPS_SERVICE]
+      });
+
+      const server = await device.gatt.connect();
+
+      // Try FTMS first, then fall back to CPS
+      let service = null, characteristic = null, mode = null;
+      try {
+        service = await server.getPrimaryService(FTMS_SERVICE);
+        characteristic = await service.getCharacteristic(FTMS_INDOOR_BIKE_DATA);
+        mode = "FTMS";
+      } catch {
+        service = await server.getPrimaryService(CPS_SERVICE);
+        characteristic = await service.getCharacteristic(CPS_MEAS);
+        mode = "CPS";
+      }
+
+      await characteristic.startNotifications();
+      characteristic.addEventListener("characteristicvaluechanged", evt => {
+        const dv = evt.target.value;
+        if (mode === "FTMS") {
+          handleFtms(dv);
+        } else {
+          handleCps(dv);
         }
+      });
+
+      alert(`Connected, mode: ${mode}`);
+      startTimer();
+    } catch (e) {
+      console.error(e);
+      alert("Connection failed: " + e.message);
+    }
+  }
+
+  // FTMS Indoor Bike Data (0x2AD2)
+  let ftmsEnergyJ = 0;
+  function handleFtms(dv) {
+    let offset = 0;
+    const flags = u16(dv, offset);
+    offset += 2;
+
+    // Skip fields based on flags
+    if (flags & 0x0001) { offset += 2; } // More Data
+    if (flags & 0x0002) { offset += 2; } // Avg Speed
+    let cadence = null;
+    if (flags & 0x0004) { cadence = u16(dv, offset) / 2; offset += 2; } // Cadence (0.5 RPM units)
+    if (flags & 0x0008) { offset += 2; } // Avg Cadence
+    if (flags & 0x0010) { offset += 3; } // Total Distance (m, 24 bit)
+    if (flags & 0x0020) { offset += 2; } // Resistance Level
+    let watts = null;
+    if (flags & 0x0040) { watts = s16(dv, offset); offset += 2; } // Instant Power (W)
+    if (flags & 0x0080) { offset += 2; } // Avg Power
+
+    // Energy fields per spec
+    let totalEnergyKJ = null;
+    if (flags & 0x0100) { totalEnergyKJ = u16(dv, offset); offset += 2; } // Total Energy (kJ)
+    if (flags & 0x0200) { offset += 2; } // Energy Per Hour
+    if (flags & 0x0400) { offset += 1; } // Energy Per Minute
+
+    // Compute work in Joules
+    if (totalEnergyKJ != null) ftmsEnergyJ = totalEnergyKJ * 1000;
+
+    if (watts == null && cadence == null) return;
+    updateDisplay(watts ?? 0, cadence ?? 0, ftmsEnergyJ || 0);
+  }
+
+  // Cycling Power Measurement (0x2A63)
+  let cpsEnergyJ = 0;
+  let lastCrank = null;
+  function handleCps(dv) {
+    let offset = 0;
+    const flags = u16(dv, offset);
+    offset += 2;
+
+    const watts = s16(dv, offset);
+    offset += 2;
+
+    // Pedal balance present (bit0)
+    if (flags & 0x0001) offset += 1;
+    // Accumulated Torque present (bit2)
+    if (flags & 0x0004) offset += 2;
+    // Wheel Revolution Data present (bit4)
+    if (flags & 0x0010) {
+      offset += 6;
+    }
+    // Crank Revolution Data present (bit5)
+    let cadence = null;
+    if (flags & 0x0020) {
+      const revs = u16(dv, offset);
+      offset += 2;
+      const lastEvent = u16(dv, offset);
+      offset += 2; // time in 1/1024 s
+      if (lastCrank) {
+        const dRevs = (revs - lastCrank.revs + 65536) % 65536;
+        const dTime = ((lastEvent - lastCrank.time + 65536) % 65536) / 1024;
+        if (dTime > 0) cadence = (dRevs / dTime) * 60;
+      }
+      lastCrank = { revs, time: lastEvent };
+    }
+    // Extreme Angles present (bit6)
+    if (flags & 0x0040) offset += 3;
+    // Top and Bottom Dead Spot Angles present (bit7)
+    if (flags & 0x0080) offset += 4;
+    // Accumulated Energy present (bit11)
+    if (flags & 0x0800) {
+      const kJ = u16(dv, offset);
+      offset += 2;
+      cpsEnergyJ = kJ * 1000;
     }
 
-    function stopTimer() {
-        clearInterval(timerInterval);
-        timerInterval = null;
-    }
+    updateDisplay(watts, cadence ?? 0, cpsEnergyJ || 0);
+  }
 
-    function resetTimer() {
-        stopTimer();
-        elapsedSeconds = 0;
-        document.getElementById("timer").innerText = "00:00:00";
-    }
+  // Wire up your buttons
+  window.connectToDevice = connectToDevice;
+  window.startTimer = startTimer;
+  window.stopTimer = stopTimer;
+  window.resetTimer = resetTimer;
+</script>
 
-    function updateDisplay(watts, cadence, totalWork) {
-        document.getElementById('power').innerText = `Power: ${watts} W`;
-        document.getElementById('cadence').innerText = `Cadence: ${cadence.toFixed(0)} RPM`;
-        document.getElementById('work').innerText = `Work: ${totalWork} J`;
-    }
-
-    async function connectToDevice() {
-        try {
-            let device = await navigator.bluetooth.requestDevice({
-                acceptAllDevices: true,
-                optionalServices: [serviceUUID]
-            });
-
-            const server = await device.gatt.connect();
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            const service = await server.getPrimaryService(serviceUUID);
-            characteristic = await service.getCharacteristic(characteristicUUID);
-            characteristic.startNotifications();
-            characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-            
-            alert("Connected to DFC successfully!");
-            startTimer();
-        } catch (error) {
-            console.error(error);
-            alert("Connection failed: " + error.message);
-        }
-    }
-
-    function handleCharacteristicValueChanged(event) {
-        const data = new Uint8Array(event.target.value.buffer);
-        console.log("Raw Bluetooth Data:", data);
-
-        if (data.byteLength < 8) {
-            console.warn("Received data too short, skipping.");
-            return;
-        }
-
-        // Extract Watts (actual power output)
-        let watts = data[2] | (data[3] << 8);  // Bytes 2-3 (confirmed watts)
-
-        // Extract Total Work from accumulating value
-        let totalWork = data[6] | (data[7] << 8);  // Bytes 6-7 (accumulating power)
-
-        // Extract Cadence (Likely Bytes 4-5)
-        let rawCadence = data[4] | (data[5] << 8);
-        let cadence = rawCadence / 4;  // Adjust scaling
-
-        console.log(`Watts: ${watts} W, Cadence: ${cadence} RPM, Work: ${totalWork} J`);
-        updateDisplay(watts, cadence, totalWork);
-    }
-  </script>
-</body>
-</html>
